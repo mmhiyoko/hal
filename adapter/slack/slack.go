@@ -8,7 +8,7 @@ import (
 
 	"github.com/danryan/env"
 	"github.com/danryan/hal"
-	"github.com/davecgh/go-spew/spew"
+	"github.com/nlopes/slack"
 	irc "github.com/thoj/go-ircevent"
 )
 
@@ -30,6 +30,7 @@ type adapter struct {
 	ircPassword    string
 	ircConnection  *irc.Connection
 	linkNames      int
+	rtm            *slack.RTM
 }
 
 type config struct {
@@ -62,12 +63,11 @@ func New(r *hal.Robot) (hal.Adapter, error) {
 		ircPassword:    c.IrcPassword,
 		responseMethod: c.ResponseMethod,
 	}
-	spew.Dump(c)
 	hal.Logger.Debugf("%v", os.Getenv("HAL_SLACK_CHANNEL_MODE"))
 	hal.Logger.Debugf("channel mode: %v", a.channelMode)
-	// if a.channelMode == "" {
-	// a.channelMode = "whitelist"
-	// }
+	if a.channelMode == "" {
+		a.channelMode = "whitelist"
+	}
 	a.SetRobot(r)
 	return a, nil
 }
@@ -81,9 +81,8 @@ func (a *adapter) Send(res *hal.Response, strings ...string) error {
 		a.sendIRC(res, strings...)
 
 	} else {
-		err := error(a.sendHTTP(res, strings...))
-		if err != nil {
-			return err
+		for _, str := range strings {
+			a.rtm.SendMessage(a.rtm.NewOutgoingMessage(str, res.Message.Room))
 		}
 	}
 
@@ -155,12 +154,9 @@ func (a *adapter) Run() error {
 		go a.startIRCConnection()
 		hal.Logger.Debug("slack - started IRC connection")
 	} else {
-		// set up handlers
-		hal.Logger.Debug("slack - adding HTTP request handlers")
-		hal.Router.HandleFunc("/hal/slack-webhook", a.slackHandler)
-		// Someday we won't need this :D
-		hal.Router.HandleFunc("/hubot/slack-webhook", a.slackHandler)
-		hal.Logger.Debug("slack - added HTTP request handlers")
+		hal.Logger.Debug("slack - starting RTM connection")
+		go a.startConnection()
+		hal.Logger.Debug("slack - started RTM connection")
 	}
 
 	hal.Logger.Debugf("slack - channelmode=%v channels=%v", a.channelMode, a.channels)
