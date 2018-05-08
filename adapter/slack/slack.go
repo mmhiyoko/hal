@@ -1,7 +1,6 @@
 package slack
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -9,7 +8,6 @@ import (
 	"github.com/danryan/env"
 	"github.com/danryan/hal"
 	"github.com/nlopes/slack"
-	irc "github.com/thoj/go-ircevent"
 )
 
 func init() {
@@ -26,9 +24,6 @@ type adapter struct {
 	botname        string
 	responseMethod string
 	iconEmoji      string
-	ircEnabled     bool
-	ircPassword    string
-	ircConnection  *irc.Connection
 	linkNames      int
 	rtm            *slack.RTM
 }
@@ -40,8 +35,6 @@ type config struct {
 	Mode           string `env:"key=HAL_SLACK_MODE"`
 	Botname        string `env:"key=HAL_SLACK_BOTNAME default=hal"`
 	IconEmoji      string `env:"key=HAL_SLACK_ICON_EMOJI"`
-	IrcEnabled     bool   `env:"key=HAL_SLACK_IRC_ENABLED default=false"`
-	IrcPassword    string `env:"key=HAL_SLACK_IRC_PASSWORD"`
 	ResponseMethod string `env:"key=HAL_SLACK_RESPONSE_METHOD default=http"`
 	ChannelMode    string `env:"key=HAL_SLACK_CHANNEL_MODE "`
 }
@@ -59,8 +52,6 @@ func New(r *hal.Robot) (hal.Adapter, error) {
 		mode:           c.Mode,
 		botname:        c.Botname,
 		iconEmoji:      c.IconEmoji,
-		ircEnabled:     c.IrcEnabled,
-		ircPassword:    c.IrcPassword,
 		responseMethod: c.ResponseMethod,
 	}
 	hal.Logger.Debugf("%v", os.Getenv("HAL_SLACK_CHANNEL_MODE"))
@@ -74,16 +65,8 @@ func New(r *hal.Robot) (hal.Adapter, error) {
 
 // Send sends a regular response
 func (a *adapter) Send(res *hal.Response, strings ...string) error {
-	if a.responseMethod == "irc" {
-		if !a.ircEnabled {
-			return errors.New("slack - IRC response method used but IRC is not enabled")
-		}
-		a.sendIRC(res, strings...)
-
-	} else {
-		for _, str := range strings {
-			a.rtm.SendMessage(a.rtm.NewOutgoingMessage(str, res.Message.Room))
-		}
+	for _, str := range strings {
+		a.rtm.SendMessage(a.rtm.NewOutgoingMessage(str, res.Message.Room))
 	}
 
 	return nil
@@ -148,16 +131,9 @@ func (a *adapter) Receive(msg *hal.Message) error {
 
 // Run starts the adapter
 func (a *adapter) Run() error {
-	if a.ircEnabled {
-		// set up a connection to the IRC gateway
-		hal.Logger.Debug("slack - starting IRC connection")
-		go a.startIRCConnection()
-		hal.Logger.Debug("slack - started IRC connection")
-	} else {
-		hal.Logger.Debug("slack - starting RTM connection")
-		go a.startConnection()
-		hal.Logger.Debug("slack - started RTM connection")
-	}
+	hal.Logger.Debug("slack - starting RTM connection")
+	go a.startConnection()
+	hal.Logger.Debug("slack - started RTM connection")
 
 	hal.Logger.Debugf("slack - channelmode=%v channels=%v", a.channelMode, a.channels)
 	return nil
@@ -165,12 +141,6 @@ func (a *adapter) Run() error {
 
 // Stop shuts down the adapter
 func (a *adapter) Stop() error {
-	if a.ircEnabled {
-		// set up a connection to the IRC gateway
-		hal.Logger.Debug("slack - stopping IRC connection")
-		a.stopIRCConnection()
-		hal.Logger.Debug("slack - stopped IRC connection")
-	}
 	return nil
 }
 
