@@ -7,7 +7,6 @@ import (
 
 	"github.com/danryan/env"
 	"github.com/danryan/hal"
-	"github.com/nlopes/slack"
 )
 
 func init() {
@@ -25,7 +24,8 @@ type adapter struct {
 	responseMethod string
 	iconEmoji      string
 	linkNames      int
-	rtm            *slack.RTM
+	api			   Api
+	rtm            *RTM
 }
 
 type config struct {
@@ -59,6 +59,8 @@ func New(r *hal.Robot) (hal.Adapter, error) {
 	if a.channelMode == "" {
 		a.channelMode = "whitelist"
 	}
+	a.api = NewApi(a.token)
+	a.rtm = a.api.NewRTM()
 	a.SetRobot(r)
 	return a, nil
 }
@@ -131,6 +133,7 @@ func (a *adapter) Receive(msg *hal.Message) error {
 
 // Run starts the adapter
 func (a *adapter) Run() error {
+	a.setAllUsers()
 	hal.Logger.Debug("slack - starting RTM connection")
 	go a.startConnection()
 	hal.Logger.Debug("slack - started RTM connection")
@@ -153,3 +156,26 @@ func (a *adapter) inChannels(room string) bool {
 
 	return false
 }
+
+func (a *adapter) setAllUsers() {
+	users, err := a.api.GetUsers()
+	if err != nil {
+		hal.Logger.Debugf("%s\n", err)
+	}
+
+	for _, user := range users {
+		newUser := hal.User{
+			ID:   user.ID,
+			Name: user.Name,
+		}
+		u, err := a.Robot.Users.Get(user.ID)
+		if err != nil {
+			a.Robot.Users.Set(user.ID, newUser)
+		}
+		if u.Name != user.Name {
+			a.Robot.Users.Set(user.ID, newUser)
+		}
+	}
+	hal.Logger.Debugf("Stored users: %s\n", a.Robot.Users.All())
+}
+

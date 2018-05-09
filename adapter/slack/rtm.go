@@ -5,31 +5,30 @@ import (
 	"github.com/nlopes/slack"
 )
 
+type RTMService interface {
+	SendMessage(*slack.OutgoingMessage)
+	ManageConnection()
+	NewOutgoingMessage(string, string) *slack.OutgoingMessage
+}
+
+type RTM struct {
+	rtmService RTMService
+	IncomingEvents chan slack.RTMEvent
+}
+
+func (r *RTM) SendMessage(msg *slack.OutgoingMessage) {
+	r.rtmService.SendMessage(msg)
+}
+
+func (r *RTM) ManageConnection() {
+	r.rtmService.ManageConnection()
+}
+
+func (r *RTM) NewOutgoingMessage(text string, channelID string) *slack.OutgoingMessage {
+	return r.rtmService.NewOutgoingMessage(text, channelID)
+}
+
 func (a *adapter) startConnection() {
-	api := slack.New(a.token)
-
-	users, err := api.GetUsers()
-	if err != nil {
-		hal.Logger.Debugf("%s\n", err)
-	}
-
-	for _, user := range users {
-		newUser := hal.User{
-			ID:   user.ID,
-			Name: user.Name,
-		}
-		u, err := a.Robot.Users.Get(user.ID)
-		if err != nil {
-			a.Robot.Users.Set(user.ID, newUser)
-		}
-
-		if u.Name != user.Name {
-			a.Robot.Users.Set(user.ID, newUser)
-		}
-	}
-	hal.Logger.Debugf("Stored users: %s\n", a.Robot.Users.All())
-
-	a.rtm = api.NewRTM()
 	go a.rtm.ManageConnection()
 
 	for msg := range a.rtm.IncomingEvents {
